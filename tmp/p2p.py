@@ -90,7 +90,7 @@ def main():
         chat_server = Chat_Server()
         chat_client = Chat_Client()
         chat_server.start()
-        text_input = Text_Input()
+        text_input = Text_Input('localhost')
         text_input.start()
     else:
         chat_server = Chat_Server()
