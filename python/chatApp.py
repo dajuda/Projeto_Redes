@@ -6,70 +6,108 @@ import json
 import uuid
 
 
-class ChatClient():
+class P2P():
 
     def __init__(self):
+        # Socket servidor
         self.serverSoc = None
-        self.serverStatus = 0
+
+        # Tamanho do Buffer
         self.buffsize = 1024
+
+        # Dicionario contendo todos os clientes conectados
         self.allClients = {}
+
+        # Lista de ids de mensagens
         self.ids = []
+
+        # Contador utilizado no dicionario para a quantidade
         self.counter = 0
+
+        # IP de interface de rede
         self.host_ip = (self.get_ip_address('wlan0'), 8090)
 
-    def handleSetServer(self):
+    # Seta o servidor
+    def setServer(self):
+
+        # Verifica se o server esta ativo e realiza o desativamento
         if self.serverSoc is not None:
             self.serverSoc.close()
             self.serverSoc = None
             self.serverStatus = 0
         try:
+            # Cria socket do server com o IP e porta padrao
             self.serverSoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.serverSoc.bind(self.host_ip)
             self.serverSoc.listen(5)
-            print '\nServer listening on %s:%s' % self.host_ip
+            print '\nServidor ouvindo em %s:%s' % self.host_ip
+
+            # Com o server setado comecamos a ouvir conexoes de outros peers
             thread.start_new_thread(self.listenClients, ())
-            self.serverStatus = 1
             self.name = ''
             if self.name is '':
                 self.name = "%s:%s" % self.host_ip
         except:
-            print '\nError setting up server'
+            print '\nErro em inicializar o servidor'
 
+    # Metodo que que ouve a porta para a conexao de clientes
     def listenClients(self):
         while 1:
+            # Aceita a conexao
             clientsoc, clientaddr = self.serverSoc.accept()
-            print '\nClient connected from %s:%s' % clientaddr
+            print '\nNovo cliente conectado (%s:%s)' % clientaddr
+
+            # Adiciona o socket client no dicionario de peers conectados
             self.addClient(clientsoc, clientaddr)
+
+            # Inicializa a thread que ouve o que cliente escreve e manda para pos peers conectados
             thread.start_new_thread(self.handleClientMessages, (clientsoc, clientaddr))
         self.serverSoc.close()
 
+    # Cria o socket do novo peer e comeca a ouvir mensagens vindas do mesmo
     def handleAddClient(self, clientaddr):
         try:
+            # Cria socket o novo peers
             clientsoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             clientsoc.connect(clientaddr)
-            print '\nConnected to client on %s:%s' % clientaddr
+            print '\nConectado ao cliente (%s:%s)' % clientaddr
+
+            # Adiciona o socket client no dicionario de peers conectados
             self.addClient(clientsoc, clientaddr)
+
+            # Inicializa a thread que ouve menssagens enviadas por este novo peer
             thread.start_new_thread(self.handleClientMessages, (clientsoc, clientaddr))
         except:
-            print '\nError connecting to server'
+            print '\nErro ao conectar com o servidor'
 
+    # Thread que fica ouvindo menssagens recebidas do socket do peers conectado
     def handleClientMessages(self, clientsoc, clientaddr):
         while 1:
             try:
+                # Recebe JSON vindo de um peer conectado
                 chat_info = json.loads(clientsoc.recv(self.buffsize))
                 id_rcv = chat_info['id']
+
+                # Checa se a mensagem ja foi recebida
                 if not id_rcv in self.ids:
+                    # Se nao foi, adiciona ela as mensagens recebidas
                     self.ids.append(id_rcv)
                     client = chat_info['from']
                     server = chat_info['to']
                     msg = chat_info['data']
 
+                    # Verifica se a menssagem recebida eh global
                     if server == 'all':
-                        print 'From: %s Message: %s' % (clientsoc.getpeername(), msg)
+                        print '%s: %s' % (clientsoc.getpeername(), msg)
 
+                    # Verifica se a menssagem recebida e privada
                     if server == self.host_ip[0]:
-                        print '(Private) From: %s Message: %s' % (clientsoc.getpeername(), msg)
+                        print '(Privado) %s: %s' % (clientsoc.getpeername(), msg)
+
+                    # Se nao for privada
                     else:
+                        # Replica a menssagem para todos os peers conectados
+                        # (menos o que enviou)
                         for client in self.allClients.keys():
                             if client != clientsoc:
                                 client.send(json.dumps(chat_info))
@@ -77,24 +115,23 @@ class ChatClient():
                 break
         self.removeClient(clientsoc, clientaddr)
         clientsoc.close()
-        print '\nClient disconnected from %s:%s' % clientaddr
+        print '\nCliente desconectado (%s:%s)' % clientaddr
 
-    def handleSendChat(self, clientaddr=None):
-        if self.serverStatus == 0:
-            print '\nSet server address first'
-            return
-
-        msg = raw_input('Message: ')
-        msg.join('\r\n')
+    def handleSendChat(self, clientaddr=None, text=None):
+        if text is None:
+            text = raw_input()
+        msg = text
         for client in self.allClients.keys():
             chat_info = {'from': self.host_ip[0], 'to': clientaddr,
                          'data': msg, 'id': str(uuid.uuid4())}
             client.send(json.dumps(chat_info))
 
+    # Adiciona peer ao dicionario de peers conectados
     def addClient(self, clientsoc, clientaddr):
         self.allClients[clientsoc] = self.counter
         self.counter += 1
 
+    # Remove peer do dicionario de peers conectados
     def removeClient(self, clientsoc, clientaddr):
         print self.allClients
         del self.allClients[clientsoc]
@@ -106,20 +143,19 @@ class ChatClient():
 
 
 if __name__ == '__main__':
-    teste = ChatClient()
-    teste.handleSetServer()
+    chat = P2P()
+    chat.setServer()
     print 'Comandos:\n'\
-          '\tConectar-se: "#IP"\n'\
-          '\tMensagem Privada: "@IP"\n'\
-          '\tMensagem Publica: "all"\n'\
-          '\tSair: Pressione Enter'
+          '\tConectar: "#IP"\n'\
+          '\tMenssagem Privada: "@IP", pressione Enter e digite a mensagem\n'\
+          '\tSair: "q"'
     while True:
         command = raw_input()
-        if command is '':
+        if command[0] is 'q':
             break
         if command[0] is '#':
-            teste.handleAddClient((command[1:], 8090))
+            chat.handleAddClient((command[1:], 8090))
         if command[0] is '@':
-            teste.handleSendChat(command[1:])
-        if command == 'all':
-            teste.handleSendChat('all')
+            chat.handleSendChat(command[1:])
+        else:
+            chat.handleSendChat('all', command)
