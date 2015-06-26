@@ -3,6 +3,8 @@ import thread
 import fcntl
 import struct
 import json
+import uuid
+
 
 class ChatClient():
 
@@ -11,25 +13,25 @@ class ChatClient():
         self.serverStatus = 0
         self.buffsize = 1024
         self.allClients = {}
+        self.ids = []
         self.counter = 0
+        self.host_ip = (self.get_ip_address('wlan0'), 8090)
 
     def handleSetServer(self):
         if self.serverSoc is not None:
             self.serverSoc.close()
             self.serverSoc = None
             self.serverStatus = 0
-        serveraddr = (self.get_ip_address('wlan0'), 8090)
-        #serveraddr = ('127.0.0.1', 8090)
         try:
             self.serverSoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.serverSoc.bind(serveraddr)
+            self.serverSoc.bind(self.host_ip)
             self.serverSoc.listen(5)
-            print '\nServer listening on %s:%s' % serveraddr
+            print '\nServer listening on %s:%s' % self.host_ip
             thread.start_new_thread(self.listenClients, ())
             self.serverStatus = 1
             self.name = ''
             if self.name is '':
-                self.name = "%s:%s" % serveraddr
+                self.name = "%s:%s" % self.host_ip
         except:
             print '\nError setting up server'
 
@@ -54,53 +56,47 @@ class ChatClient():
     def handleClientMessages(self, clientsoc, clientaddr):
         while 1:
             try:
-                data = clientsoc.recv(self.buffsize)
-                #data = json.loads(clientsoc.recv(self.buffsize))
-                #msg = data['data']
-                #client = data['from']
+                chat_info = json.loads(clientsoc.recv(self.buffsize))
+                id_rcv = chat_info['id']
+                if not id_rcv in self.ids:
+                    self.ids.append(id_rcv)
+                    client = chat_info['from']
+                    server = chat_info['to']
+                    msg = chat_info['data']
 
-                #if client is (self.get_ip_address('wlan0'), 8090):
-                #    break
-                #else:
-                #for client in self.allClients.keys():
-                #    #client.send(json.dumps(data))
-                #    client.send(msg)
+                    if server == 'all':
+                        print 'From: %s Message: %s' % (clientsoc.getpeername(), msg)
 
-                print 'From: %s Message: %s' % (clientaddr, data)
-                if not data:
-                    break
-                #self.addChat("%s:%s" % clientaddr, data)
+                    if server == self.host_ip[0]:
+                        print '(Private) From: %s Message: %s' % (clientsoc.getpeername(), msg)
+                    else:
+                        for client in self.allClients.keys():
+                            if client != clientsoc:
+                                client.send(json.dumps(chat_info))
             except:
                 break
         self.removeClient(clientsoc, clientaddr)
         clientsoc.close()
         print '\nClient disconnected from %s:%s' % clientaddr
 
-    def handleSendChat(self):
+    def handleSendChat(self, clientaddr=None):
         if self.serverStatus == 0:
             print '\nSet server address first'
             return
-        msg = raw_input('Menssagem: ')
-        #data = {'from' : (self.get_ip_address('wlan0'), 8090), 'data' : msg}
-        if msg == '':
-            return
-        #self.addChat("me", msg)
+
+        msg = raw_input('Message: ')
+        msg.join('\r\n')
         for client in self.allClients.keys():
-            #client.send(json.dumps(data))
-            client.send(msg)
-    #def addChat(self, client, msg):
-        #self.receivedChats.config(state=NORMAL)
-        #self.receivedChats.insert("end", client + ": " + msg + "\n")
-        #self.receivedChats.config(state=DISABLED)
+            chat_info = {'from': self.host_ip[0], 'to': clientaddr,
+                         'data': msg, 'id': str(uuid.uuid4())}
+            client.send(json.dumps(chat_info))
 
     def addClient(self, clientsoc, clientaddr):
         self.allClients[clientsoc] = self.counter
         self.counter += 1
-        #self.friends.insert(self.counter, "%s:%s" % clientaddr)
 
     def removeClient(self, clientsoc, clientaddr):
         print self.allClients
-        #self.friends.delete(self.allClients[clientsoc])
         del self.allClients[clientsoc]
         print self.allClients
 
@@ -114,6 +110,7 @@ if __name__ == '__main__':
     teste.handleSetServer()
     print 'Comandos:\n'\
           '\tConectar-se: "#IP"\n'\
+          '\tMensagem Privada: "@IP"\n'\
           '\tMensagem Publica: "all"\n'\
           '\tSair: Pressione Enter'
     while True:
@@ -122,5 +119,7 @@ if __name__ == '__main__':
             break
         if command[0] is '#':
             teste.handleAddClient((command[1:], 8090))
+        if command[0] is '@':
+            teste.handleSendChat(command[1:])
         if command == 'all':
-            teste.handleSendChat()
+            teste.handleSendChat('all')
