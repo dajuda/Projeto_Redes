@@ -25,7 +25,7 @@ class P2P():
         self.counter = 0
 
         # IP de interface de rede
-        self.host_ip = (self.get_ip_address('wlan0'), 8090)
+        self.host_ip = (self.get_ip_address('eth0'), 8090)
 
     # Seta o servidor
     def setServer(self):
