@@ -95,7 +95,8 @@ class P2P():
                     client = chat_info['from']
                     server = chat_info['to']
                     msg = chat_info['data']
-
+                    if msg == '!disconnected':
+                        break
                     # Verifica se a menssagem recebida eh global
                     if server == 'all':
                         print '%s: %s' % (clientsoc.getpeername(), msg)
@@ -113,8 +114,8 @@ class P2P():
                                 client.send(json.dumps(chat_info))
             except:
                 break
-        self.removeClient(clientsoc, clientaddr)
-        clientsoc.close()
+        self.removeClient(clientsoc)
+        #clientsoc.close()
         print '\nCliente desconectado (%s:%s)' % clientaddr
 
     def handleSendChat(self, clientaddr=None, text=None):
@@ -132,14 +133,30 @@ class P2P():
         self.counter += 1
 
     # Remove peer do dicionario de peers conectados
-    def removeClient(self, clientsoc, clientaddr):
-        print self.allClients
+    def removeClient(self, clientsoc):
         del self.allClients[clientsoc]
-        print self.allClients
 
     def get_ip_address(self, ifname):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', ifname[:15]))[20:24])
+
+    def disconnect_peer(self, clientaddr):
+        searched = "('" + clientaddr + "', 8090)"
+        for peer in self.allClients.keys():
+            print peer.getpeername()
+            print searched
+            if str(peer.getpeername()) == searched:
+                self.handleSendChat(clientaddr, '!disconnected')
+                self.removeClient(peer)
+                peer.close()
+                print 'Peer %s desconectado.' % searched
+                return
+        print 'Peer inexistente.'
+
+    def list_peers(self):
+        print 'Peers conectados:'
+        for peer in self.allClients.keys():
+            print '\t', peer.getpeername()
 
 
 if __name__ == '__main__':
@@ -147,15 +164,22 @@ if __name__ == '__main__':
     chat.setServer()
     print 'Comandos:\n'\
           '\tConectar: "#IP"\n'\
+          '\tDesconectar: "-IP"\n'\
           '\tMenssagem Privada: "@IP", pressione Enter e digite a mensagem\n'\
+          '\tListar peers conectados: "*"\n'\
           '\tSair: "q"'
+    commands = ['q', '*', '#', '@', '-']
     while True:
         command = raw_input()
         if command[0] is 'q':
             break
         if command[0] is '#':
             chat.handleAddClient((command[1:], 8090))
+        if command[0] is '*':
+            chat.list_peers()
+        if command[0] is '-':
+            chat.disconnect_peer(command[1:])
         if command[0] is '@':
             chat.handleSendChat(command[1:])
-        else:
+        if not command[0] in commands:
             chat.handleSendChat('all', command)
